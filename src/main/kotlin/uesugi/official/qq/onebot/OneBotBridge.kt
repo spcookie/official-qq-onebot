@@ -25,6 +25,7 @@ class OneBotBridge(
     private val server = OneBotServer(
         OneBotConfig(
             wsForwardServerEnable = true,
+            heartbeatEnable = true,
             wsForwardServerHost = config.onebot.host,
             wsForwardServerPort = config.onebot.port,
             accessToken = config.onebot.accessToken,
