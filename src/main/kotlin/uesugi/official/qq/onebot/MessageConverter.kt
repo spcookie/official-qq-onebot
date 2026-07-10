@@ -73,6 +73,7 @@ class MessageConverter(
         val time = event.timestamp.toEpochSeconds()
         val sender =
             GroupSender(userId = userId, nickname = userId.toString(), card = "", role = event.author.memberRole)
+        store.recordReceived(groupId, event.id)
         val stored = store.remember(
             officialId = event.id,
             groupId = groupId,

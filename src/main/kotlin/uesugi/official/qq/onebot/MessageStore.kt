@@ -31,6 +31,63 @@ class MessageStore(private val maxEntries: Int = 4096) {
     /** 官方消息 ID 到本地 message_id 的索引，用于重复事件去重。 */
     private val officialToLocal = mutableMapOf<String, Int>()
 
+    // ---- 被动回复追踪 ----
+
+    /** 被动消息有效期（5 分钟）。 */
+    private val replyTtlMillis = 5 * 60 * 1000L
+
+    /** 每条消息最大回复次数。 */
+    private val maxReplyCount = 5
+
+    /** 按 groupId 分组，记录群内收到的消息的 officialId、到达时间和已回复次数。 */
+    private data class ReplyEntry(
+        val officialId: String,
+        val receivedAt: Long,
+        val replyCount: AtomicInteger = AtomicInteger(0),
+    )
+
+    /** groupId → (officialId → ReplyEntry)，LRU 淘汰旧群。 */
+    private val replyByGroup = object : LinkedHashMap<Long, LinkedHashMap<String, ReplyEntry>>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, LinkedHashMap<String, ReplyEntry>>?): Boolean =
+            size > 64
+    }
+
+    /**
+     * 记录一条收到的消息，供后续被动回复消费。
+     * 仅记录非机器人自身的消息。
+     */
+    @Synchronized
+    fun recordReceived(groupId: Long, officialId: String) {
+        val entries = replyByGroup.getOrPut(groupId) { LinkedHashMap() }
+        // 不覆盖已有记录（同一条消息可能被多次推送，只记录首次到达时间）
+        if (entries.containsKey(officialId)) return
+        // 清理本群过期条目
+        val now = System.currentTimeMillis()
+        entries.entries.removeAll { (_, e) -> now - e.receivedAt > replyTtlMillis }
+        entries[officialId] = ReplyEntry(officialId, now)
+    }
+
+    /**
+     * 尝试消费一个可用的被动回复目标。
+     * 返回 (officialId, msgSeq) 或 null（无可用目标时应降级为主动发送）。
+     */
+    @Synchronized
+    fun consumeReplyTarget(groupId: Long): Pair<String, Int>? {
+        val entries = replyByGroup[groupId] ?: return null
+        val now = System.currentTimeMillis()
+
+        // 清理过期条目
+        entries.entries.removeAll { (_, e) -> now - e.receivedAt > replyTtlMillis }
+
+        // 找第一个未超过回复上限的消息（最早到达的优先消费）
+        val entry = entries.values.firstOrNull { it.replyCount.get() < maxReplyCount } ?: return null
+
+        val seq = entry.replyCount.incrementAndGet()
+        return entry.officialId to seq
+    }
+
+    // ---- 消息存储 ----
+
     /** 记住一条官方或本地发送后的消息；相同 officialId 会复用已有本地 ID。 */
     @Synchronized
     fun remember(

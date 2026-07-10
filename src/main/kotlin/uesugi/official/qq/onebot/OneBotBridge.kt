@@ -157,50 +157,66 @@ class OneBotBridge(
         val groupOpenid = ids.localGroupToOfficial(groupId)
             ?: throw MiddlewareException(1404, "unknown group_id: $groupId")
         val parts = converter.toOutgoingParts(message)
-        log.info("Sending group message: group_id={}, official_group={}, parts={}", groupId, groupOpenid, parts.size)
+
+        // 尝试消费被动回复目标
+        val replyTarget = store.consumeReplyTarget(groupId)
+
+        log.info(
+            "Sending group message: group_id={}, official_group={}, parts={}, passive={}",
+            groupId, groupOpenid, parts.size, replyTarget != null
+        )
         var firstLocalId: Int? = null
         var msgSeq = 1
-        for (part in parts) {
-            val response = when {
+        for ((i, part) in parts.withIndex()) {
+            // 仅首段携带被动回复引用
+            val (msgId, seq) = if (i == 0 && replyTarget != null) {
+                replyTarget.first to replyTarget.second
+            } else {
+                null to msgSeq++
+            }
+            val request = when {
                 part.markdownContent != null -> {
-                    log.debug("Sending markdown group message: group_id={}", groupId)
-                    api.sendGroupMessage(
-                        groupOpenid,
-                        SendGroupMessageRequest(
-                            msgType = 2,
-                            markdown = MarkdownInfo(part.markdownContent),
-                            msgSeq = msgSeq++,
-                        ),
+                    log.debug("Sending markdown group message: group_id={}, passive={}", groupId, msgId != null)
+                    SendGroupMessageRequest(
+                        msgType = 2,
+                        markdown = MarkdownInfo(part.markdownContent),
+                        msgId = msgId,
+                        msgSeq = seq,
                     )
                 }
 
                 part.mediaFileType != null -> {
                     log.debug(
-                        "Uploading media for group message: group_id={}, file_type={}",
-                        groupId,
-                        part.mediaFileType
+                        "Uploading media for group message: group_id={}, file_type={}, passive={}",
+                        groupId, part.mediaFileType, msgId != null
                     )
                     val uploaded = api.uploadGroupFile(groupOpenid, part.mediaFileType, part.mediaUrl, part.mediaData)
-                    api.sendGroupMessage(
-                        groupOpenid,
-                        SendGroupMessageRequest(
-                            content = part.content,
-                            msgType = 7,
-                            media = MediaInfo(uploaded.fileInfo),
-                            msgSeq = msgSeq++
-                        )
+                    SendGroupMessageRequest(
+                        content = part.content,
+                        msgType = 7,
+                        media = MediaInfo(uploaded.fileInfo),
+                        msgId = msgId,
+                        msgSeq = seq,
                     )
                 }
 
                 else -> {
-                    api.sendGroupMessage(
-                        groupOpenid,
-                        SendGroupMessageRequest(content = part.content, msgType = 0, msgSeq = msgSeq++)
+                    SendGroupMessageRequest(
+                        content = part.content,
+                        msgType = 0,
+                        msgId = msgId,
+                        msgSeq = seq,
                     )
                 }
             }
+            val response = api.sendGroupMessage(groupOpenid, request)
             val localId = rememberSentMessage(response, groupId, groupOpenid, message)
-            log.info("Sent group message part: local_id={}, official_id={}", localId, response.id)
+            log.info(
+                "Sent group message part: local_id={}, official_id={}, passive={}",
+                localId,
+                response.id,
+                msgId != null
+            )
             if (firstLocalId == null) firstLocalId = localId
         }
         return MessageIdResult(firstLocalId ?: 0)

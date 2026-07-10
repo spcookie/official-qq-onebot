@@ -9,11 +9,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import uesugi.onebot.core.config.OneBotConfig
+import uesugi.onebot.core.message.buildMessage
 import uesugi.onebot.core.model.RawEvent
 import uesugi.onebot.sdk.client.OneBotClient
 import uesugi.onebot.sdk.client.api.sendGroupMsg
-import uesugi.onebot.sdk.message.buildMessage
-import uesugi.onebot.sdk.message.text
 import java.net.ServerSocket
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -34,7 +34,7 @@ class BridgeConfigTest {
             """.trimIndent(),
         )
 
-        val loaded = BridgeConfig.fromConfig(config)
+        val loaded = BridgeConfig.fromConfig(config).entries.first().value
 
         // 同时验证 QQ 基础配置和双向 ID 映射配置的读取结果。
         assertEquals("app", loaded.qq.appId)
