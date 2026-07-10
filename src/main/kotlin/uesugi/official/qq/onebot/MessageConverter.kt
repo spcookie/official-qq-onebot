@@ -178,6 +178,7 @@ class MessageConverter(
     fun toOutgoingParts(message: MessageContent): List<OutgoingPart> {
         val parts = mutableListOf<OutgoingPart>()
         val text = StringBuilder()
+        val markdown = StringBuilder()
 
         // 官方一条消息只能表达一种主要类型；遇到富媒体前先提交累积文本。
         fun flushText() {
@@ -187,31 +188,64 @@ class MessageConverter(
             }
         }
 
+        fun flushMarkdown() {
+            if (markdown.isNotEmpty()) {
+                parts += OutgoingPart(content = "", markdownContent = markdown.toString())
+                markdown.clear()
+            }
+        }
+
+        val aggregated = message.distinctBy { it.type }.count() > 1
+
+
         for (segment in message) {
             when (segment.type) {
-                "text" -> text.append(segment.stringData("text").orEmpty())
+                "text" -> {
+                    if (aggregated) {
+                        markdown.append(segment.stringData("text").orEmpty())
+                    } else {
+                        text.append(segment.stringData("text").orEmpty())
+                    }
+                }
+
                 "markdown" -> {
-                    // 官方 QQ 原生支持 markdown 消息，但一条消息只能是一种主类型，所以独立成 part。
-                    flushText()
-                    parts += OutgoingPart(content = "", markdownContent = segment.stringData("content").orEmpty())
+                    if (aggregated) {
+                        markdown.append(segment.stringData("content").orEmpty())
+                    } else {
+                        // 官方 QQ 原生支持 markdown 消息，但一条消息只能是一种主类型，所以独立成 part。
+                        parts += OutgoingPart(content = "", markdownContent = segment.stringData("content").orEmpty())
+                    }
                 }
 
                 "at" -> {
                     // 官方群聊 @ 使用 XML-like 标签，必须把本地 user_id 映射回 member_openid。
                     val raw = segment.stringData("qq")
                     if (raw == "all") {
-                        text.append("@all")
+                        if (aggregated) {
+                            markdown.append("<qqbot-at-everyone />")
+                        } else {
+                            parts += OutgoingPart(content = "", markdownContent = "<qqbot-at-everyone />")
+                        }
                     } else {
                         val local = raw?.toLongOrNull()
                         val openid = local?.let { ids.localMemberToOfficial(it) }
-                        if (openid != null) text.append("""<@$openid>""")
-                        else text.append("@").append(raw.orEmpty())
+                        if (openid != null) {
+                            if (aggregated) {
+                                markdown.append("""<qqbot-at-user id="$openid" />""")
+                            } else {
+                                parts += OutgoingPart(
+                                    content = "",
+                                    markdownContent = """<qqbot-at-user id="$openid" />"""
+                                )
+                            }
+                        } else text.append("@").append(raw.orEmpty())
                     }
                 }
 
                 "image" -> {
                     // 图片走 /files 上传，file_type=1。
                     flushText()
+                    flushMarkdown()
                     parts += OutgoingPart(
                         content = "",
                         mediaFileType = 1,
@@ -241,6 +275,7 @@ class MessageConverter(
             }
         }
         flushText()
+        flushMarkdown()
         return parts.ifEmpty { listOf(OutgoingPart(content = "")) }
     }
 

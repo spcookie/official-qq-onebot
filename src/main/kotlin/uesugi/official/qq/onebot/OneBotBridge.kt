@@ -77,6 +77,10 @@ class OneBotBridge(
             log.debug("Handle get_version_info")
             VersionInfo(appName = "official-qq-onebot", appVersion = "1.0-SNAPSHOT", protocolVersion = "v11")
         }
+        server.onCanSendMarkdown {
+            log.debug("Handle can_send_markdown")
+            CanSendResult(true)
+        }
         server.onCanSendImage {
             log.debug("Handle can_send_image")
             CanSendResult(true)
