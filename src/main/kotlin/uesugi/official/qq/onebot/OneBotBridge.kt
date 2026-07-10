@@ -5,11 +5,15 @@ import kotlinx.serialization.json.JsonObject
 import org.slf4j.LoggerFactory
 import uesugi.onebot.core.config.OneBotConfig
 import uesugi.onebot.core.dispatch.MiddlewareException
+import uesugi.onebot.core.message.imageFile
+import uesugi.onebot.core.message.imageUrl
 import uesugi.onebot.core.model.*
 import uesugi.onebot.core.transport.JsonFactory
 import uesugi.onebot.lib.server.OneBotServer
 import uesugi.onebot.lib.server.api.*
 import kotlin.time.ExperimentalTime
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /** OneBot 侧服务端：接收 action，并把官方 QQ 事件推送给 onebot。 */
 class OneBotBridge(
@@ -199,7 +203,7 @@ class OneBotBridge(
     }
 
     /** 记录发送成功的消息，并合成 message_sent 事件。 */
-    @OptIn(ExperimentalTime::class)
+    @OptIn(ExperimentalTime::class, ExperimentalUuidApi::class)
     private suspend fun rememberSentMessage(
         response: SendGroupMessageResponse,
         groupId: Long,
@@ -211,6 +215,17 @@ class OneBotBridge(
             GroupSender(config.onebot.selfId, config.onebot.nickname, card = config.onebot.nickname, role = "member")
         val raw = message.joinToString("") { segment ->
             segment.data["text"]?.toString()?.trim('"') ?: "[${segment.type}]"
+        }
+        val message = message.map { ms ->
+            when (ms.type) {
+                MessageSegment.IMAGE -> imageSegment(
+                    file = Uuid.random().toHexString() + ".gif",
+                    url = ms.imageUrl ?: ms.imageFile?.takeIf { it.startsWith("base64://") }
+                    ?: throw MiddlewareException(1404, "image url not found"),
+                )
+
+                else -> ms
+            }
         }
         val stored = store.remember(response.id, groupId, groupOpenid, config.onebot.selfId, now, message, raw, sender)
         log.debug("Push synthetic message_sent event: local_id={}, official_id={}", stored.localId, response.id)

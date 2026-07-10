@@ -2,7 +2,9 @@ package uesugi.official.qq.onebot
 
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
+import com.typesafe.config.ConfigValueType
 import java.io.File
+
 
 /** 官方 QQ 侧的网关、OpenAPI 和鉴权配置。 */
 data class QqConfig(
@@ -38,43 +40,55 @@ data class BridgeConfig(
 ) {
     companion object {
         /** 从 -Dconfig.path 或 CONFIG_PATH 指定的文件读取配置；未指定时读取 classpath 默认配置。 */
-        fun load(): BridgeConfig {
+        fun load(): Map<String, BridgeConfig> {
             val configPath = System.getProperty("config.path") ?: System.getenv("CONFIG_PATH")
             val config = if (configPath.isNullOrBlank()) {
-                ConfigFactory.load()
+                ConfigFactory.defaultApplication()
+                    .withFallback(ConfigFactory.defaultReferenceUnresolved())
+                    .resolve()
             } else {
-                ConfigFactory.parseFile(File(configPath)).withFallback(ConfigFactory.load()).resolve()
+                ConfigFactory.parseFile(File(configPath)).withFallback(
+                    ConfigFactory.defaultApplication()
+                        .withFallback(ConfigFactory.defaultReferenceUnresolved())
+                        .resolve()
+                ).resolve()
             }
             return fromConfig(config)
         }
 
         /** 将 Typesafe Config 转换为强类型配置，集中处理默认值和路径读取。 */
-        fun fromConfig(config: Config): BridgeConfig {
-            val qq = config.getConfig("qq")
-            val onebot = config.getConfig("onebot")
-            return BridgeConfig(
-                qq = QqConfig(
-                    appId = qq.getString("app-id"),
-                    clientSecret = qq.getString("client-secret"),
-                    apiBaseUrl = qq.getString("api-base-url").trimEnd('/'),
-                    gatewayUrl = qq.getString("gateway-url"),
-                    intents = qq.getInt("intents"),
-                    shard = qq.getIntList("shard").map { it.toInt() },
-                ),
-                onebot = OneBotBridgeConfig(
-                    host = onebot.getString("host"),
-                    port = onebot.getInt("port"),
-                    accessToken = onebot.optionalString("access-token")?.takeIf { it.isNotBlank() },
-                    selfId = onebot.getLong("self-id"),
-                    nickname = onebot.getString("nickname"),
-                ),
-                idMap = IdMapConfig(
-                    groups = config.readLongStringMap("id-map.groups"),
-                    members = config.readLongStringMap("id-map.members"),
-                    auto = config.optionalBoolean("id-map.auto") ?: false,
-                ),
-            )
-        }
+        fun fromConfig(config: Config): Map<String, BridgeConfig> = config.root()
+            .keys
+            .filter { key ->
+                config.getValue(key).valueType() == ConfigValueType.OBJECT
+            }
+            .associateWith { key ->
+                val cfg = config.getConfig(key)
+                val qq = cfg.getConfig("qq")
+                val onebot = cfg.getConfig("onebot")
+                BridgeConfig(
+                    qq = QqConfig(
+                        appId = qq.getString("app-id"),
+                        clientSecret = qq.getString("client-secret"),
+                        apiBaseUrl = qq.getString("api-base-url").trimEnd('/'),
+                        gatewayUrl = qq.getString("gateway-url"),
+                        intents = qq.getInt("intents"),
+                        shard = qq.getIntList("shard").map { it.toInt() },
+                    ),
+                    onebot = OneBotBridgeConfig(
+                        host = onebot.getString("host"),
+                        port = onebot.getInt("port"),
+                        accessToken = onebot.optionalString("access-token")?.takeIf { it.isNotBlank() },
+                        selfId = onebot.getLong("self-id"),
+                        nickname = onebot.getString("nickname"),
+                    ),
+                    idMap = IdMapConfig(
+                        groups = cfg.readLongStringMap("id-map.groups"),
+                        members = cfg.readLongStringMap("id-map.members"),
+                        auto = cfg.optionalBoolean("id-map.auto") ?: false,
+                    ),
+                )
+            }
 
         /** 可选字符串读取器，用于 access-token 这类允许为空的配置项。 */
         private fun Config.optionalString(path: String): String? =

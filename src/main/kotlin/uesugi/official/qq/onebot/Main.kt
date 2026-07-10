@@ -1,16 +1,19 @@
 package uesugi.official.qq.onebot
 
+import com.typesafe.config.Config
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-/** 独立桥接进程入口：启动 OneBot WS 服务，并连接官方 QQ Gateway。 */
-fun main() {
-    runBlocking {
-        val log = LoggerFactory.getLogger("official-qq-onebot")
-
-        // 组装桥接器的所有依赖
-        val config = BridgeConfig.load()
+suspend fun runOfficialQqOnebot(config: Config? = null, log: Logger = LoggerFactory.getLogger("official-qq-onebot")) {
+    // 组装桥接器的所有依赖
+    val configMap = if (config == null) {
+        BridgeConfig.load()
+    } else {
+        BridgeConfig.fromConfig(config)
+    }
+    configMap.forEach { (key, config) ->
         val ids = IdMapper(config.idMap)
         val store = MessageStore()
         val tokenProvider = AppAccessTokenProvider(config.qq)
@@ -38,7 +41,7 @@ fun main() {
         // JVM 退出时尽量优雅关闭 WS server 和官方 Gateway 连接。
         Runtime.getRuntime().addShutdownHook(Thread {
             runBlocking {
-                log.info("Stopping official QQ OneBot bridge")
+                log.info("Stopping official QQ OneBot({}) bridge", key)
                 gateway.stop()
                 bridge.stop()
             }
@@ -46,7 +49,14 @@ fun main() {
 
         bridge.start()
         gateway.start()
-        log.info("Official QQ OneBot bridge started on ws://{}:{}", config.onebot.host, config.onebot.port)
+        log.info("Official QQ OneBot({}) bridge started on ws://{}:{}", key, config.onebot.host, config.onebot.port)
+    }
+}
+
+/** 独立桥接进程入口：启动 OneBot WS 服务，并连接官方 QQ Gateway。 */
+fun main() {
+    runBlocking {
+        runOfficialQqOnebot()
         awaitCancellation()
     }
 }
