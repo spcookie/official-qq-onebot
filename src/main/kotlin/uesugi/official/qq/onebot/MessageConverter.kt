@@ -210,12 +210,7 @@ class MessageConverter(
                 }
 
                 "markdown" -> {
-                    if (aggregated) {
-                        markdown.append(segment.stringData("content").orEmpty())
-                    } else {
-                        // 官方 QQ 原生支持 markdown 消息，但一条消息只能是一种主类型，所以独立成 part。
-                        parts += OutgoingPart(content = "", markdownContent = segment.stringData("content").orEmpty())
-                    }
+                    markdown.append(segment.stringData("content").orEmpty())
                 }
 
                 "at" -> {
