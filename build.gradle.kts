@@ -1,11 +1,16 @@
+import org.gradle.kotlin.dsl.application
+import org.gradle.kotlin.dsl.kotlin
+import org.gradle.kotlin.dsl.`maven-publish`
+
 plugins {
     kotlin("jvm") version "2.2.20"
     kotlin("plugin.serialization") version "2.2.20"
     application
+    `maven-publish`
 }
 
-group = "uesugi.official.qq"
-version = "1.0-SNAPSHOT"
+group = "uesugi.adapter"
+version = "1.0.0"
 
 repositories {
     mavenLocal()
@@ -42,4 +47,12 @@ application {
 
 kotlin {
     jvmToolchain(17)
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+        }
+    }
 }
