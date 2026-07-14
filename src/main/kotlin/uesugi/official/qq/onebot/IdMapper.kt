@@ -42,6 +42,22 @@ class IdMapper(config: IdMapConfig) {
     @Synchronized
     fun allGroups(): Map<Long, String> = groupToOfficial.toMap()
 
+    /** 运行时动态添加成员映射。 */
+    @Synchronized
+    fun addMemberMapping(localUserId: Long, openid: String) {
+        memberToOfficial[localUserId] = openid
+        officialToMember[openid] = localUserId
+        log.info("Added member mapping: {} -> {}", localUserId, openid)
+    }
+
+    /** 运行时动态添加群映射。 */
+    @Synchronized
+    fun addGroupMapping(localGroupId: Long, groupOpenid: String) {
+        groupToOfficial[localGroupId] = groupOpenid
+        officialToGroup[groupOpenid] = localGroupId
+        log.info("Added group mapping: {} -> {}", localGroupId, groupOpenid)
+    }
+
     /** 返回所有已配置或运行期自动生成的成员映射，用于 get_group_member_list 等信息类 action。 */
     @Synchronized
     fun allMembers(): Map<Long, String> = memberToOfficial.toMap()

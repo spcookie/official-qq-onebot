@@ -39,9 +39,9 @@ data class BridgeConfig(
     val idMap: IdMapConfig,
 ) {
     companion object {
-        /** 从 -Dconfig.path 或 CONFIG_PATH 指定的文件读取配置；未指定时读取 classpath 默认配置。 */
+        /** 从 -Dofficial.qq.config.path 或 OFFICIAL_QQ_CONFIG_PATH 指定的文件读取配置；未指定时读取 classpath 默认配置。 */
         fun load(): Map<String, BridgeConfig> {
-            val configPath = System.getProperty("config.path") ?: System.getenv("CONFIG_PATH")
+            val configPath = System.getProperty("official.qq.config.path") ?: System.getenv("OFFICIAL_QQ_CONFIG_PATH")
             val config = if (configPath.isNullOrBlank()) {
                 ConfigFactory.defaultApplication()
                     .withFallback(ConfigFactory.defaultReferenceUnresolved())
