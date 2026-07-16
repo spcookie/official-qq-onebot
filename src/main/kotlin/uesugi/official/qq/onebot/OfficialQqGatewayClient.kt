@@ -50,6 +50,7 @@ class OfficialQqGatewayClient(
         log.info("Stopping official QQ gateway client")
         runner?.cancel()
         runner = null
+        client.close()
         scope.cancel()
     }
 

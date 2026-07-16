@@ -6,17 +6,50 @@ import kotlinx.coroutines.runBlocking
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+class OfficialQqOnebotRuntime internal constructor(
+    private val instances: List<OfficialQqOnebotInstance>,
+    private val log: Logger,
+) {
+    @Volatile
+    private var stopped = false
+    internal var shutdownHook: Thread? = null
+
+    suspend fun stop() {
+        if (stopped) return
+        stopped = true
+        runCatching {
+            shutdownHook?.let { Runtime.getRuntime().removeShutdownHook(it) }
+        }
+        instances.asReversed().forEach { instance ->
+            log.info("Stopping official QQ OneBot({}) bridge", instance.key)
+            runCatching { instance.gateway.stop() }
+                .onFailure { log.warn("Failed to stop official QQ gateway({})", instance.key, it) }
+            runCatching { instance.bridge.stop() }
+                .onFailure { log.warn("Failed to stop OneBot bridge({})", instance.key, it) }
+        }
+    }
+}
+
+internal data class OfficialQqOnebotInstance(
+    val key: String,
+    val gateway: OfficialQqGatewayClient,
+    val bridge: OneBotBridge,
+)
+
 suspend fun runOfficialQqOnebot(
     config: Config? = null,
     log: Logger = LoggerFactory.getLogger("official-qq-onebot"),
-    gatewayEventHandler: (OfficialGatewayEvent, OfficialQqApiClient) -> Boolean = { _, _ -> true }
-) {
+    gatewayEventHandler: (OfficialGatewayEvent, OfficialQqApiClient) -> Boolean = { _, _ -> true },
+    installShutdownHook: Boolean = true,
+): OfficialQqOnebotRuntime {
     // 组装桥接器的所有依赖
     val configMap = if (config == null) {
         BridgeConfig.load()
     } else {
         BridgeConfig.fromConfig(config)
     }
+    val instances = mutableListOf<OfficialQqOnebotInstance>()
+
     configMap.forEach { (key, config) ->
         val ids = IdMapper(config.idMap)
         IdMapperRegistry.register(key, ids)
@@ -44,19 +77,20 @@ suspend fun runOfficialQqOnebot(
             }
         })
 
-        // JVM 退出时尽量优雅关闭 WS server 和官方 Gateway 连接。
-        Runtime.getRuntime().addShutdownHook(Thread {
-            runBlocking {
-                log.info("Stopping official QQ OneBot({}) bridge", key)
-                gateway.stop()
-                bridge.stop()
-            }
-        })
-
         bridge.start()
         gateway.start()
+        instances += OfficialQqOnebotInstance(key, gateway, bridge)
         log.info("Official QQ OneBot({}) bridge started on ws://{}:{}", key, config.onebot.host, config.onebot.port)
     }
+
+    val runtime = OfficialQqOnebotRuntime(instances, log)
+    if (installShutdownHook) {
+        runtime.shutdownHook = Thread {
+            runBlocking { runtime.stop() }
+        }
+        Runtime.getRuntime().addShutdownHook(runtime.shutdownHook)
+    }
+    return runtime
 }
 
 /** 独立桥接进程入口：启动 OneBot WS 服务，并连接官方 QQ Gateway。 */
