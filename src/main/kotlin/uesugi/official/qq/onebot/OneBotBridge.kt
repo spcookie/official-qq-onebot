@@ -209,7 +209,19 @@ class OneBotBridge(
                     )
                 }
             }
-            val response = api.sendGroupMessage(groupOpenid, request)
+            val response = try {
+                api.sendGroupMessage(groupOpenid, request)
+            } catch (e: OfficialQqApiException) {
+                if (msgId != null && e.message?.contains("304103") == true) {
+                    log.warn(
+                        "Passive reply rejected (304103), retrying without msg_id: group_id={}, msg_id={}",
+                        groupId, msgId
+                    )
+                    api.sendGroupMessage(groupOpenid, request.copy(msgId = null, msgSeq = msgSeq++))
+                } else {
+                    throw e
+                }
+            }
             val localId = rememberSentMessage(response, groupId, groupOpenid, message)
             log.info(
                 "Sent group message part: local_id={}, official_id={}, passive={}",
